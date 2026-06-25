@@ -167,7 +167,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .export-row{display:flex;justify-content:flex-end;margin-top:.5rem}
 
 /* ── TOAST ── */
-.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:#1c1917;color:#f5f5f4;padding:10px 18px;border-radius:var(--rl);font-size:13px;opacity:0;transition:opacity .3s,transform .3s;pointer-events:none;z-index:999;white-space:nowrap;display:flex;align-items:center;gap:8px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:#1c1917;color:#f5f5f4;padding:10px 18px;border-radius:var(--rl);font-size:13px;opacity:0;transition:opacity .3s,transform .3s;pointer-events:none;z-index:999;max-width:90vw;text-align:center;display:flex;align-items:center;gap:8px}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
 /* ── FOOTER ── */
@@ -769,9 +769,12 @@ Solo incluye lo que puedas leer claramente.
 Responde ÚNICAMENTE el JSON plano, sin texto adicional, sin markdown, sin explicaciones.`;
 
     try {
+      const headers = {'Content-Type':'application/json'};
+      if(isPDF) headers['anthropic-beta'] = 'pdfs-2024-09-25';
+
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: {'Content-Type':'application/json'},
+        headers,
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
           max_tokens: 1000,
@@ -787,11 +790,23 @@ Responde ÚNICAMENTE el JSON plano, sin texto adicional, sin markdown, sin expli
       });
 
       const data = await resp.json();
+
+      // Diagnóstico visible si la API devuelve error
+      if(!resp.ok || data.error){
+        const msg = data.error?.message || `Error ${resp.status}`;
+        document.getElementById('ocrSpin').classList.remove('show');
+        document.getElementById('ocrDrop').style.display = 'flex';
+        showToast('⚠️ ' + msg, 5000);
+        return;
+      }
+
       const txt  = (data.content||[]).map(c=>c.text||'').join('');
       let parsed = {};
       try {
         const clean = txt.replace(/```json|```/g,'').trim();
-        parsed = JSON.parse(clean);
+        // Extraer primer bloque JSON si hay texto alrededor
+        const match = clean.match(/\{[\s\S]*\}/);
+        parsed = match ? JSON.parse(match[0]) : {};
       } catch(er){ parsed = {}; }
 
       ocr = parsed;
@@ -817,7 +832,7 @@ Responde ÚNICAMENTE el JSON plano, sin texto adicional, sin markdown, sin expli
     } catch(err){
       document.getElementById('ocrSpin').classList.remove('show');
       document.getElementById('ocrDrop').style.display = 'flex';
-      showToast('⚠️ No se pudo procesar el documento');
+      showToast('⚠️ ' + (err.message || 'No se pudo procesar el documento'), 5000);
     }
   };
   reader.readAsDataURL(file);
