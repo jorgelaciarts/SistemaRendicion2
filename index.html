@@ -57,7 +57,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .ocr-drop .sec-btn:hover{background:var(--bg2)}
 .ocr-preview{display:none;padding:12px;gap:12px;align-items:flex-start}
 .ocr-preview.show{display:flex}
-.ocr-img{width:90px;height:90px;object-fit:cover;border-radius:8px;border:0.5px solid var(--brd);flex-shrink:0}
+.ocr-thumb{width:80px;height:80px;flex-shrink:0;border-radius:8px;border:0.5px solid var(--brd);overflow:hidden;display:flex;align-items:center;justify-content:center;background:var(--bg2)}
+.ocr-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.ocr-thumb .pdf-ico{display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--red)}
+.ocr-thumb .pdf-ico i{font-size:28px}
+.ocr-thumb .pdf-ico span{font-size:10px;font-weight:600;color:var(--red)}
 .ocr-result{flex:1;min-width:0}
 .ocr-result h4{font-size:13px;font-weight:500;margin-bottom:6px}
 .ocr-tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
@@ -189,33 +193,38 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div>
 
 <!-- ══════════════════════════════════════════
-     ZONA OCR — sube foto del documento
+     ZONA OCR — foto o PDF
 ══════════════════════════════════════════ -->
 <div class="ocr-zone" id="ocrZone">
 
-  <!-- estado inicial: drop/cámara -->
+  <!-- estado inicial -->
   <div class="ocr-drop" id="ocrDrop">
-    <input type="file" id="ocrFile" accept="image/*" capture="environment">
-    <div class="ocr-drop-ico"><i class="ti ti-camera-plus"></i></div>
-    <h3>Escanear documento</h3>
-    <p>Saca foto a tu boleta, factura o comprobante y extraeremos los datos automáticamente</p>
-    <button class="cam-btn" onclick="document.getElementById('ocrFile').setAttribute('capture','environment');document.getElementById('ocrFile').click()">
-      <i class="ti ti-camera"></i> Tomar foto
-    </button>
-    <button class="sec-btn" onclick="document.getElementById('ocrFile').removeAttribute('capture');document.getElementById('ocrFile').click()">
-      <i class="ti ti-photo"></i> Elegir desde galería
-    </button>
+    <input type="file" id="ocrFile" accept="image/*,application/pdf">
+    <div class="ocr-drop-ico"><i class="ti ti-scan"></i></div>
+    <h3>Subir documento</h3>
+    <p>Foto, imagen o PDF de boleta, factura o comprobante — extraemos los datos automáticamente</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:4px">
+      <button class="cam-btn" onclick="document.getElementById('ocrFile').setAttribute('capture','environment');document.getElementById('ocrFile').setAttribute('accept','image/*');document.getElementById('ocrFile').click()">
+        <i class="ti ti-camera"></i> Tomar foto
+      </button>
+      <button class="sec-btn" onclick="document.getElementById('ocrFile').removeAttribute('capture');document.getElementById('ocrFile').setAttribute('accept','image/*');document.getElementById('ocrFile').click()">
+        <i class="ti ti-photo"></i> Imagen
+      </button>
+      <button class="sec-btn" onclick="document.getElementById('ocrFile').removeAttribute('capture');document.getElementById('ocrFile').setAttribute('accept','application/pdf');document.getElementById('ocrFile').click()">
+        <i class="ti ti-file-type-pdf"></i> PDF
+      </button>
+    </div>
   </div>
 
   <!-- spinner mientras procesa -->
   <div class="ocr-spin" id="ocrSpin">
     <div class="spinner"></div>
-    <p>Leyendo documento con IA…</p>
+    <p id="ocrSpinMsg">Leyendo documento con IA…</p>
   </div>
 
   <!-- resultado OCR -->
   <div class="ocr-preview" id="ocrPreview">
-    <img class="ocr-img" id="ocrImg" src="" alt="doc">
+    <div class="ocr-thumb" id="ocrThumb"></div>
     <div class="ocr-result">
       <h4>Datos extraídos del documento</h4>
       <div class="ocr-tags" id="ocrTags"></div>
@@ -719,15 +728,48 @@ function findNode(nodes, id){
 document.getElementById('ocrFile').addEventListener('change', e => {
   const file = e.target.files[0];
   if(!file) return;
+
+  const isPDF = file.type === 'application/pdf';
+  const isImg = file.type.startsWith('image/');
+  if(!isPDF && !isImg){ showToast('⚠️ Solo se aceptan imágenes o PDF'); e.target.value=''; return; }
+
   const reader = new FileReader();
   reader.onload = async ev => {
-    const b64 = ev.target.result.split(',')[1];
-    const mime = file.type || 'image/jpeg';
-    const imgUrl = ev.target.result;
+    const b64  = ev.target.result.split(',')[1];
+    const mime = file.type;
 
     document.getElementById('ocrDrop').style.display = 'none';
     document.getElementById('ocrPreview').classList.remove('show');
     document.getElementById('ocrSpin').classList.add('show');
+    document.getElementById('ocrSpinMsg').textContent = isPDF
+      ? 'Leyendo PDF con IA…'
+      : 'Leyendo imagen con IA…';
+
+    // Miniatura en el resultado
+    const thumb = document.getElementById('ocrThumb');
+    if(isPDF){
+      thumb.innerHTML = `<div class="pdf-ico"><i class="ti ti-file-type-pdf"></i><span>PDF</span></div>`;
+    } else {
+      thumb.innerHTML = `<img src="${ev.target.result}" alt="doc">`;
+    }
+
+    // Construir content según tipo
+    const docContent = isPDF
+      ? { type:'document', source:{ type:'base64', media_type:'application/pdf', data:b64 } }
+      : { type:'image',    source:{ type:'base64', media_type:mime,               data:b64 } };
+
+    const SYSTEM = `Eres un asistente especializado en rendiciones electorales chilenas (SERVEL, Ley 19.884).
+Analiza el documento adjunto (boleta, factura, ticket, comprobante, recibo, contrato, liquidación, etc.) y extrae los datos relevantes.
+Responde SOLO con un objeto JSON con estas claves posibles:
+- monto: número total (sin puntos ni $, solo dígitos y punto decimal si aplica)
+- fecha: en formato YYYY-MM-DD
+- desc: descripción breve del bien o servicio (máx 80 caracteres)
+- prov: nombre del proveedor, empresa o emisor
+- ndoc: número de boleta, factura, folio o documento
+- rut: RUT del emisor si aparece (con guión, ej: 76.123.456-7)
+Si un campo no aparece en el documento, omítelo (no escribas null ni "").
+Solo incluye lo que puedas leer claramente.
+Responde ÚNICAMENTE el JSON plano, sin texto adicional, sin markdown, sin explicaciones.`;
 
     try {
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -736,15 +778,11 @@ document.getElementById('ocrFile').addEventListener('change', e => {
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
           max_tokens: 1000,
-          system: `Eres un asistente especializado en rendiciones electorales chilenas (SERVEL, Ley 19.884).
-Analiza la imagen de un documento (boleta, factura, ticket, comprobante, recibo, contrato, etc.) y extrae los datos relevantes.
-Responde SOLO con un objeto JSON con las claves: monto (número sin puntos ni $), fecha (formato YYYY-MM-DD), desc (descripción breve del bien/servicio), prov (nombre del proveedor o emisor), ndoc (número de boleta/factura), rut (RUT del emisor si aparece).
-Si un campo no está presente en el documento, omítelo (no incluyas null ni ""). Solo incluye lo que puedas leer claramente.
-Responde ÚNICAMENTE el JSON, sin texto adicional, sin explicaciones, sin markdown.`,
+          system: SYSTEM,
           messages:[{
             role:'user',
             content:[
-              {type:'image', source:{type:'base64', media_type:mime, data:b64}},
+              docContent,
               {type:'text', text:'Extrae los datos de este documento para una rendición electoral.'}
             ]
           }]
@@ -752,31 +790,28 @@ Responde ÚNICAMENTE el JSON, sin texto adicional, sin explicaciones, sin markdo
       });
 
       const data = await resp.json();
-      const txt = (data.content||[]).map(c=>c.text||'').join('');
+      const txt  = (data.content||[]).map(c=>c.text||'').join('');
       let parsed = {};
       try {
         const clean = txt.replace(/```json|```/g,'').trim();
         parsed = JSON.parse(clean);
-      } catch(e){ parsed = {}; }
+      } catch(er){ parsed = {}; }
 
       ocr = parsed;
 
-      // Mostrar resultado
       document.getElementById('ocrSpin').classList.remove('show');
-      document.getElementById('ocrImg').src = imgUrl;
       document.getElementById('ocrPreview').classList.add('show');
 
       const tags = document.getElementById('ocrTags');
       tags.innerHTML = '';
-      if(ocr.monto)  tags.innerHTML += `<span class="ocr-tag"><strong>Monto:</strong> ${fmt(ocr.monto)}</span>`;
-      if(ocr.fecha)  tags.innerHTML += `<span class="ocr-tag"><strong>Fecha:</strong> ${ffecha(ocr.fecha)}</span>`;
-      if(ocr.prov)   tags.innerHTML += `<span class="ocr-tag"><strong>Emisor:</strong> ${ocr.prov}</span>`;
-      if(ocr.ndoc)   tags.innerHTML += `<span class="ocr-tag"><strong>N°doc:</strong> ${ocr.ndoc}</span>`;
-      if(ocr.rut)    tags.innerHTML += `<span class="ocr-tag"><strong>RUT:</strong> ${ocr.rut}</span>`;
-      if(ocr.desc)   tags.innerHTML += `<span class="ocr-tag"><strong>Desc:</strong> ${ocr.desc}</span>`;
+      if(ocr.monto) tags.innerHTML += `<span class="ocr-tag"><strong>Monto:</strong> ${fmt(ocr.monto)}</span>`;
+      if(ocr.fecha) tags.innerHTML += `<span class="ocr-tag"><strong>Fecha:</strong> ${ffecha(ocr.fecha)}</span>`;
+      if(ocr.prov)  tags.innerHTML += `<span class="ocr-tag"><strong>Emisor:</strong> ${ocr.prov}</span>`;
+      if(ocr.ndoc)  tags.innerHTML += `<span class="ocr-tag"><strong>N°doc:</strong> ${ocr.ndoc}</span>`;
+      if(ocr.rut)   tags.innerHTML += `<span class="ocr-tag"><strong>RUT:</strong> ${ocr.rut}</span>`;
+      if(ocr.desc)  tags.innerHTML += `<span class="ocr-tag"><strong>Desc:</strong> ${ocr.desc}</span>`;
       if(!tags.innerHTML) tags.innerHTML = `<span class="ocr-tag">No se pudo extraer información del documento</span>`;
 
-      // Si hay formulario abierto, actualizarlo
       if(selectedLeaf && document.getElementById('form-panel')){
         const node = findNode(TREE, selectedLeaf);
         if(node) showForm(node);
@@ -785,7 +820,7 @@ Responde ÚNICAMENTE el JSON, sin texto adicional, sin explicaciones, sin markdo
     } catch(err){
       document.getElementById('ocrSpin').classList.remove('show');
       document.getElementById('ocrDrop').style.display = 'flex';
-      showToast('⚠️ No se pudo procesar la imagen');
+      showToast('⚠️ No se pudo procesar el documento');
     }
   };
   reader.readAsDataURL(file);
@@ -810,10 +845,12 @@ zone.addEventListener('dragleave', () => zone.classList.remove('dragging'));
 zone.addEventListener('drop', e => {
   e.preventDefault(); zone.classList.remove('dragging');
   const f = e.dataTransfer.files[0];
-  if(f && f.type.startsWith('image/')){
+  if(f && (f.type.startsWith('image/') || f.type === 'application/pdf')){
     const dt = new DataTransfer(); dt.items.add(f);
     document.getElementById('ocrFile').files = dt.files;
     document.getElementById('ocrFile').dispatchEvent(new Event('change'));
+  } else {
+    showToast('⚠️ Solo se aceptan imágenes o PDF');
   }
 });
 
