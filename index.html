@@ -207,11 +207,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <button class="cam-btn" onclick="document.getElementById('ocrFile').setAttribute('capture','environment');document.getElementById('ocrFile').setAttribute('accept','image/*');document.getElementById('ocrFile').click()">
         <i class="ti ti-camera"></i> Tomar foto
       </button>
-      <button class="sec-btn" onclick="document.getElementById('ocrFile').removeAttribute('capture');document.getElementById('ocrFile').setAttribute('accept','image/*');document.getElementById('ocrFile').click()">
-        <i class="ti ti-photo"></i> Imagen
-      </button>
-      <button class="sec-btn" onclick="document.getElementById('ocrFile').removeAttribute('capture');document.getElementById('ocrFile').setAttribute('accept','application/pdf');document.getElementById('ocrFile').click()">
-        <i class="ti ti-file-type-pdf"></i> PDF
+      <button class="sec-btn" onclick="document.getElementById('ocrFile').removeAttribute('capture');document.getElementById('ocrFile').setAttribute('accept','image/*,application/pdf');document.getElementById('ocrFile').click()">
+        <i class="ti ti-photo"></i> Elegir desde galería o PDF
       </button>
     </div>
   </div>
